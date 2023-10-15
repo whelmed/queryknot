@@ -31,6 +31,13 @@ from parsy import (
 )
 
 
+
+class ParserError(Exception):
+    def __init__(self, message: str, _input: str):
+        super().__init__(message)
+        self.input = _input
+
+
 def trim_whitespace(parser):
     ''' Trim whitespace from the start and end of a parser. '''
     return whitespace.many() >> parser << whitespace.many()
@@ -74,7 +81,7 @@ class DataTypes:
         ''' Allows dot separated keys such as a.b.c 
             characters are alphanumeric and underscore
         '''
-        return (yield trim_whitespace(regex(r'[a-zA-Z0-9_]*(\.[a-zA-Z0-9_]*)*')))
+        return (yield trim_whitespace(regex(r'[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)*')))
 
 
     @staticmethod
@@ -140,7 +147,10 @@ class Parser:
 
 
     def parse(self, input_str):
-        self.parsed = self._parser.parse(input_str)
+        try:
+            self.parsed = self._parser.parse(input_str)
+        except Exception as e:
+            raise ParserError(f'Unable to parse into queryknot: {input_str}', input_str) from e
         return self.parsed
     
 
@@ -271,7 +281,8 @@ class TestDataTypes(unittest.TestCase):
                 (' a.b.c.d ',   'a.b.c.d'),
                 ('1.0.1.1',     '1.0.1.1'),
                 ('_.a.b',       '_.a.b'),
-            ]
+            ],
+            fail_cases=['a.', '.a', 'a..b', ' ', 'a b c']
         )
 
 
@@ -321,7 +332,7 @@ class TestParser(unittest.TestCase):
                 ('a.b.c []',                    ('a.b.c', [])),
                 ('quantum.planck_constant 6.62607015e-34', ('quantum.planck_constant', 6.62607015e-34)),
             ],
-             fail_cases=['a.b.c', 'a.b.c 1 2', 'a.b.c test']
+             fail_cases=['a.b.c', 'a.b.c 1 2', 'a.b.c test', ' 1']
         )
         
 
@@ -417,6 +428,18 @@ class TestParser(unittest.TestCase):
         assert parser.into_object(data) == expected
 
 
+    def test_parser_error(self):
+        parser = Parser()
+        exeception_cases = [
+            'a.b.c',
+            'a.b.c 1 2',
+            'a.b.c test',
+            ' 1',
+            'monkey bread 1',
+        ]
+        for input_str in exeception_cases:
+            with self.assertRaises(ParserError):
+                parser.parse(input_str)
 
 class TestDataTypesV2(unittest.TestCase):
     def _test_parser(self, parser, test_cases, fail_cases=[]):
